@@ -1,0 +1,14 @@
+{
+  "name": "ui-optimization",
+  "version": "0.1.0",
+  "description": "Minimal XWork UI tweak: rewrites the home hero headline (探索未至之境 -> 咕咕嘎嘎).",
+  "type": "module",
+  "main": "index.js",
+  "files": ["index.js", "cordis.patch.yml"],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

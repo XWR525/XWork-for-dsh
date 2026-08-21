@@ -1,0 +1,5 @@
+# 本 bundle 贡献的配置层。插件行引用包名（而非相对源码路径），
+# 使 Node 从已安装的代码解析；该形态适用于 `dsh plugin add` 正式安装。
+- insert:
+    - id: hello-dsh
+      name: dsh-hello-dsh

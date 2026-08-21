@@ -1,0 +1,11 @@
+overrides:
+  '@deepseek-ai/dsh-web-frontend': 0.1.0-rc.8
+
+allowBuilds:
+  electron: true
+  esbuild: true
+  koffi: true
+  node-pty: true
+  "@google/genai": true
+  protobufjs: true
+  "@deepseek-ai/dsh-subprocess-local": true

@@ -1,0 +1,18 @@
+# XWork 宿主层补丁：围绕官方 Web bundle 组合 XWork 桌面子插件。
+# 兼容模式保持上游对浏览器载体与渲染 UI 的所有权。
+
+# XWork 桌面外壳行：宿主进程通过模块解析钩子把 `xwork-for-dsh` 解析到
+# 本包编译出的 xwork-shell 入口（src/main/xwork-shell.ts → out/main/xwork-shell.js）。
+- insert:
+    - id: xwork-shell
+      name: xwork-for-dsh
+      config: {}
+
+# XWork 桌面启动没有等待 Web 就绪行的终端操作员：不打印 URL 行、
+# 不交给系统浏览器（openBrowser 默认 true，必须显式关掉）。
+- id: web-runtime
+  config:
+    openBrowser: false
+    printUrl: false
+    surfaceContext: true
+    trustedHosts: []

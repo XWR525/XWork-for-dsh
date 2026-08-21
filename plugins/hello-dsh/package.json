@@ -1,0 +1,14 @@
+{
+  "name": "dsh-hello-dsh",
+  "version": "0.1.0",
+  "description": "Minimal DeepSeek Harness bundle example: printable plugin with config-layer hot reload.",
+  "type": "module",
+  "main": "index.js",
+  "files": ["index.js", "cordis.patch.yml"],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
