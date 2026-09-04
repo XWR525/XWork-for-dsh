@@ -1,14 +1,26 @@
 {
   "name": "ui-optimization",
-  "version": "0.1.0",
-  "description": "Minimal XWork UI tweak: rewrites the home hero headline (探索未至之境 -> 咕咕嘎嘎).",
+  "version": "0.3.0",
+  "description": "XWork UI tweaks: F1 translation patch rewrites residual English UI text to Chinese; F2/F3 theme override injects body-level CSS variables (style presets) with light/dark support.",
   "type": "module",
   "main": "index.js",
-  "files": ["index.js", "cordis.patch.yml"],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "client.js", "presets.js", "translations.js", "inject-script.js", "theme.js", "cordis.patch.yml"],
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.1"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"]
     }
   }
 }

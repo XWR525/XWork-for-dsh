@@ -42,6 +42,13 @@ const INSTALL_ANCHOR = fileURLToPath(new URL('../../package.json', import.meta.u
 const XWORK_PATCH_PATH = fileURLToPath(new URL('../../cordis.patch.yml', import.meta.url))
 /** 默认 Web 端口：0 = 由系统分配空闲端口，避免与同机运行的 dsh 冲突。 */
 const DEFAULT_XWORK_PORT = 0
+/** in-box 源码插件（包名 → 项目内插件目录）：纳入 fallback 链接，使
+ * client-modules 扫描器能以 `require.resolve('<包名>/package.json')` 定位
+ * dsh.client 声明并服务浏览器半侧 bundle（Host 半侧入口仍由
+ * module-resolution 的钩子重定向）。 */
+const XWORK_SOURCE_PLUGINS: ReadonlyArray<readonly [string, string]> = [
+  ['ui-optimization', join(dirname(INSTALL_ANCHOR), 'plugins', 'UI Optimization')],
+]
 
 /** 一次 XWork profile 组合的结果，交给 boot() 挂载。 */
 export interface XworkProfile {
@@ -142,6 +149,14 @@ function healXworkModuleFallback(installAnchor: string, home: string): void {
     }
   }
   for (const [packageName, target] of links) {
+    const link = join(modulesDir, packageName)
+    mkdirSync(dirname(link), { recursive: true })
+    ensureSymlink(link, target)
+  }
+  // in-box 源码插件：同一条 fallback 链上的额外链接（目录须存在才算）。
+  for (const [packageName, target] of XWORK_SOURCE_PLUGINS) {
+    if (!existsSync(join(target, 'package.json'))) continue
+    links.set(packageName, target)
     const link = join(modulesDir, packageName)
     mkdirSync(dirname(link), { recursive: true })
     ensureSymlink(link, target)
