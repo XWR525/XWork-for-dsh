@@ -282,6 +282,218 @@ export function clientScript(textEntries, tplEntries, uiConfig) {
     hideBubble()
   })
 
+  // ---- 模型设置提供方下拉框 → 权限下拉风格：自定义胶囊按钮 + 圆角弹层 ----
+  // 参考 ui-permission-presets PermissionRow（<button._selector> + Menu 弹层）：关闭态=胶囊按钮
+  //   （bg-module-platform / 高36 / border:none / 圆角18 / padding 0 14 / 14-22 / 右侧 chevron）；
+  //   打开态=圆角面板（圆角12 / padding 4 / border-inverted+shadow / bg --dsw-specific-menu），
+  //   内为 40px 高、圆角10 的菜单项，选中项右侧对勾，hover 高亮。
+  // 目标：模型设置里 3 个原生 <select>（"提供方"、"API 协议"x2；类名含 "_selectInput"，仅 settings-models 使用）。
+  //   原生 <select> 的展开列表无法用 CSS 改样式，因此隐藏原生 select、改由自定义按钮+弹层呈现；
+  //   底层原生 select 保留在 React 树内，用原生 value setter（绕过 React value tracker）+ 派发 change
+  //   回写，维持 React 受控状态与原有"添加/保存"逻辑不变。
+  // 说明：按钮/弹层以 portal（append 到 body、fixed 定位）挂在 React 树外，避免被 React 重渲染清除；
+  //       用 capture scroll 监听 + 250ms 轮询同步位置/选项/选中态/禁用态。
+  var provCssDone = false
+  var provActive = null
+  function ensureProvCss() {
+    if (provCssDone) return
+    provCssDone = true
+    var s = document.createElement('style')
+    s.textContent =
+      'select[data-uiopt-prov="1"]{opacity:0;pointer-events:none;height:36px;}' +
+      '.uiopt-prov-trigger{box-sizing:border-box;position:fixed;z-index:2000;display:inline-flex;align-items:center;gap:12px;height:36px;padding:0 14px;border:none;border-radius:18px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);cursor:pointer;font:inherit;font-size:14px;line-height:22px;text-align:left;}' +
+      '.uiopt-prov-trigger:hover{background:var(--dsw-alias-interactive-bg-hover);}' +
+      '.uiopt-prov-trigger[disabled]{opacity:.6;cursor:default;}' +
+      '.uiopt-prov-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+      '.uiopt-prov-chevron{flex:none;display:inline-flex;}' +
+      '.uiopt-prov-popup{box-sizing:border-box;position:fixed;z-index:2100;min-width:218px;max-width:360px;display:none;flex-direction:column;padding:4px;border:1px solid var(--dsw-alias-border-inverted);border-radius:12px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3);--dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);}' +
+      '.uiopt-prov-options{min-height:0;overflow-y:auto;}' +
+      '.uiopt-prov-option{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:none;border-radius:10px;background:transparent;cursor:pointer;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);text-align:left;}' +
+      '.uiopt-prov-option:hover{background:var(--dsw-alias-interactive-bg-hover);}' +
+      '.uiopt-prov-option[disabled]{opacity:.4;cursor:not-allowed;}' +
+      '.uiopt-prov-option-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+      '.uiopt-prov-option-check{flex:none;display:inline-flex;color:var(--dsw-alias-label-primary);}' +
+      '.uiopt-prov-options::-webkit-scrollbar{width:8px;}' +
+      '.uiopt-prov-options::-webkit-scrollbar-track{background:transparent;}' +
+      '.uiopt-prov-options::-webkit-scrollbar-thumb{background:var(--dsh-scrollbar-thumb);border-radius:4px;}' +
+      '.uiopt-prov-options::-webkit-scrollbar-thumb:hover{background:var(--dsh-scrollbar-thumb-hover);}'
+    ;(document.head || document.documentElement).appendChild(s)
+  }
+  function provOptionText(sel, value) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === value) return sel.options[i].text || ''
+    }
+    return ''
+  }
+  function provSig(sel) {
+    var sig = ''
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i]
+      sig += o.value + '\u0001' + (o.text || '') + '\u0001' + (o.disabled ? '1' : '0') + '\u0001'
+    }
+    return sig
+  }
+  function provBuildOptions(st) {
+    var sel = st.sel
+    var frag = document.createDocumentFragment()
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i]
+      var item = document.createElement('button')
+      item.type = 'button'
+      item.className = 'uiopt-prov-option'
+      item.setAttribute('role', 'option')
+      item.setAttribute('data-value', o.value)
+      if (o.disabled) item.disabled = true
+      var lbl = document.createElement('span')
+      lbl.className = 'uiopt-prov-option-label'
+      lbl.textContent = o.text || ''
+      item.appendChild(lbl)
+      if (o.value === sel.value) {
+        item.setAttribute('aria-selected', 'true')
+        var ck = document.createElement('span')
+        ck.className = 'uiopt-prov-option-check'
+        ck.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        item.appendChild(ck)
+      }
+      ;(function (val) {
+        item.addEventListener('click', function (e) {
+          e.preventDefault()
+          e.stopPropagation()
+          provSelect(st, val)
+        })
+      })(o.value)
+      frag.appendChild(item)
+    }
+    st.opts.textContent = ''
+    st.opts.appendChild(frag)
+  }
+  function provPosition(st) {
+    var r = st.sel.getBoundingClientRect()
+    st.btn.style.left = r.left + 'px'
+    st.btn.style.top = r.top + 'px'
+    st.btn.style.width = Math.max(0, r.width) + 'px'
+    st.btn.style.height = Math.max(0, r.height) + 'px'
+    if (!st.open) return
+    // 始终从下拉框位置向下延伸：紧贴触发器下方，高上限 = 到界面底部边界的可用空间，超出则滚动。
+    var pw = st.popup.offsetWidth || 218
+    var vw = window.innerWidth
+    var vh = window.innerHeight
+    var gap = 4
+    var chrome = 10  // 弹层内边距 4+4 与边框 1+1
+    var bottomSafe = 6
+    var left = r.left
+    var top = r.top + r.height + gap
+    var popupMax = Math.max(0, vh - top - bottomSafe)
+    var optsMax = Math.max(0, vh - top - chrome - bottomSafe)
+    if (left + pw > vw - 8) left = Math.max(8, vw - 8 - pw)
+    st.popup.style.left = left + 'px'
+    st.popup.style.top = top + 'px'
+    st.popup.style.maxHeight = popupMax + 'px'
+    st.opts.style.maxHeight = optsMax + 'px'
+  }
+  function provOpen(st) {
+    st.open = true
+    provActive = st
+    st.btn.setAttribute('aria-expanded', 'true')
+    provBuildOptions(st)
+    st.popup.style.display = 'flex'
+    st.popup.style.visibility = 'hidden'
+    provPosition(st)
+    st.popup.style.visibility = 'visible'
+  }
+  function provClose(st) {
+    st.open = false
+    if (provActive === st) provActive = null
+    st.btn.setAttribute('aria-expanded', 'false')
+    st.popup.style.display = 'none'
+  }
+  function provSelect(st, value) {
+    var sel = st.sel
+    // 与权限 Menu 一致：选中"当前已选项"时不重复触发
+    if (sel.value === value) { provClose(st); return }
+    // 用原生 value setter 绕过 React value tracker，再派发 change 触发 React onChange
+    st.setter.call(sel, value)
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    st.val.textContent = provOptionText(sel, value)
+    st.val.last = st.val.textContent
+    provClose(st)
+    provSync(st)
+  }
+  function provCleanup(st) {
+    if (st.timer) { clearInterval(st.timer); st.timer = 0 }
+    if (st.btn && st.btn.parentNode) st.btn.parentNode.removeChild(st.btn)
+    if (st.popup && st.popup.parentNode) st.popup.parentNode.removeChild(st.popup)
+    if (st.sel) st.sel.removeAttribute('data-uiopt-prov')
+  }
+  function provSync(st) {
+    if (!st.sel.isConnected || !st.btn.isConnected) { provCleanup(st); return }
+    if (st.btn.disabled !== st.sel.disabled) st.btn.disabled = st.sel.disabled
+    var text = provOptionText(st.sel, st.sel.value)
+    if (st.val.last !== text) { st.val.textContent = text; st.val.last = text }
+    provPosition(st)
+    if (st.open) {
+      var sig = provSig(st.sel)
+      if (sig !== st.sig) { st.sig = sig; provBuildOptions(st) }
+      provPosition(st)
+    }
+  }
+  function enhanceProviderSelect(sel) {
+    if (sel.getAttribute('data-uiopt-prov')) return
+    var btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'uiopt-prov-trigger'
+    btn.setAttribute('aria-haspopup', 'listbox')
+    btn.setAttribute('aria-expanded', 'false')
+    var val = document.createElement('span')
+    val.className = 'uiopt-prov-value'
+    var chev = document.createElement('span')
+    chev.className = 'uiopt-prov-chevron'
+    chev.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    btn.appendChild(val)
+    btn.appendChild(chev)
+    var popup = document.createElement('div')
+    popup.className = 'uiopt-prov-popup'
+    popup.setAttribute('role', 'listbox')
+    var opts = document.createElement('div')
+    opts.className = 'uiopt-prov-options'
+    popup.appendChild(opts)
+    document.body.appendChild(btn)
+    document.body.appendChild(popup)
+    var setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+    var st = { sel: sel, btn: btn, val: val, popup: popup, opts: opts, open: false, sig: '', timer: 0, setter: setter }
+    st.val.last = provOptionText(sel, sel.value)
+    st.val.textContent = st.val.last
+    sel.setAttribute('tabindex', '-1')
+    sel.setAttribute('data-uiopt-prov', '1')
+    sel.__uioptProv = st
+    btn.addEventListener('click', function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (st.open) provClose(st)
+      else {
+        if (provActive && provActive !== st) provClose(provActive)
+        provOpen(st)
+      }
+    })
+    document.addEventListener('click', function (e) {
+      if (!st.open) return
+      if (popup.contains(e.target) || btn.contains(e.target)) return
+      provClose(st)
+    })
+    document.addEventListener('keydown', function (e) {
+      if (st.open && e.key === 'Escape') provClose(st)
+    })
+    document.addEventListener('scroll', function () { provSync(st) }, true)
+    provSync(st)
+    st.timer = setInterval(function () { provSync(st) }, 250)
+  }
+  function scanProviderSelects(root) {
+    if (!root || !root.querySelectorAll) return
+    ensureProvCss()
+    var list = root.querySelectorAll('[class*="_selectInput"]')
+    for (var i = 0; i < list.length; i++) enhanceProviderSelect(list[i])
+  }
+
   var observer = new MutationObserver(function (muts) {
     applyChatWidthThrottled()
     for (var i = 0; i < muts.length; i++) {
@@ -290,6 +502,7 @@ export function clientScript(textEntries, tplEntries, uiConfig) {
         for (var j = 0; j < m.addedNodes.length; j++) {
           process(m.addedNodes[j])
           migrateTitle(m.addedNodes[j])
+          scanProviderSelects(m.addedNodes[j])
         }
       } else if (m.type === 'characterData') {
         fixText(m.target)
@@ -316,6 +529,11 @@ export function clientScript(textEntries, tplEntries, uiConfig) {
       ddSel + ' { animation: 0.16s cubic-bezier(0.4, 0, 0.2, 1) uiopt-dropdown-open; }' +
       '@media (prefers-reduced-motion: reduce) { ' + ddSel + ' { animation: none; } }'
     ;(document.head || document.documentElement).appendChild(ddKf)
+    // 模型设置提供方下拉框（添加提供方 / 添加自定义提供方 / 编辑提供方）→ 对齐权限下拉：
+    // 隐藏原生 <select>、换成自定义胶囊按钮 + 圆角弹层（含展开列表、对勾、hover），底层保留原生
+    // select 维持 React 受控状态。实现见上方 prov* 系列；此处对当前已渲染的页面做一次扫描（后续
+    // 由 MutationObserver 对新挂载的下拉实时增强）。
+    scanProviderSelects(document.body)
     document.addEventListener('click', onDocClickCapture, true)
     window.addEventListener('resize', function () {
       if (!chatWidth.adaptive) return
